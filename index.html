@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Cyber-Tamagotchi</title>
+<meta name="description" content="Неоновый киберпанк-питомец, который реагирует на встряхивание, голос и тапы">
+<meta name="theme-color" content="#07000f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+:root{--h:175;--a:hsl(var(--h) 100% 60%);--bg:#07000f;color-scheme:dark}
+*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+html,body{height:100%;background:var(--bg);color:#e9e4ff;font:15px/1.3 'Avenir Next Condensed','Arial Narrow',system-ui,sans-serif;overflow:hidden;touch-action:manipulation}
+body{background:radial-gradient(120% 70% at 50% 0,#2a0a4d 0,transparent 70%),var(--bg);transition:filter 1.2s}
+body.night{filter:brightness(.55) saturate(.8)}
+.grid{position:fixed;left:-60%;right:-60%;bottom:0;height:38%;transform:perspective(260px) rotateX(62deg);transform-origin:bottom;pointer-events:none;
+background:repeating-linear-gradient(90deg,#ff2fd655 0 1px,transparent 1px 46px),repeating-linear-gradient(0deg,#ff2fd655 0 1px,transparent 1px 46px);background-size:46px 46px;animation:g 2.4s linear infinite;mask:linear-gradient(transparent,#000)}
+@keyframes g{to{background-position:0 46px}}
+.app{position:relative;height:100%;display:flex;flex-direction:column;gap:10px;padding:max(14px,env(safe-area-inset-top)) 16px max(14px,env(safe-area-inset-bottom));max-width:520px;margin:auto}
+header{display:flex;align-items:baseline;justify-content:space-between}
+h1{font-size:22px;letter-spacing:.04em;color:#fff;text-shadow:0 0 8px var(--a),0 0 22px var(--a)}
+#name{color:#ff6ee7;text-shadow:0 0 10px #ff2fd6}
+#lv{color:var(--a);font-weight:700;text-shadow:0 0 8px var(--a)}
+canvas{flex:1;min-height:0;width:100%;touch-action:none}
+#msg{min-height:20px;text-align:center;color:#c9b8ff}
+.bar{display:grid;grid-template-columns:104px 1fr 34px;align-items:center;gap:8px;margin:3px 0}
+.t{height:10px;border-radius:9px;background:#ffffff14;overflow:hidden;box-shadow:inset 0 0 0 1px #ffffff1f}
+.f{height:100%;width:0;border-radius:9px;background:hsl(var(--b) 100% 58%);box-shadow:0 0 12px hsl(var(--b) 100% 58%);transition:width .25s}
+.bar b{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
+#fed{font-size:12px;color:#8f7fc0;text-align:center}
+nav{display:grid;gap:10px}.acts{grid-template-columns:repeat(3,1fr)}.tools{grid-template-columns:repeat(3,1fr)}
+button{font:inherit;color:#fff;background:#14052c;border:1.5px solid var(--k,var(--a));border-radius:14px;padding:13px 4px;
+box-shadow:0 0 14px color-mix(in srgb,var(--k,var(--a)) 45%,transparent),inset 0 0 12px color-mix(in srgb,var(--k,var(--a)) 18%,transparent);transition:transform .08s}
+button:active{transform:scale(.94)}button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.tools button{padding:8px 4px;font-size:13px;color:#b9a8ee;--k:#6a4cc4}
+.tools button.on{color:#fff;--k:#ff2fd6}
+button b{display:block;font-size:22px;font-weight:400}
+@media(prefers-reduced-motion:reduce){.grid{animation:none}}
+</style>
+</head>
+<body>
+<div class="grid"></div>
+<main class="app">
+ <header><h1>Cyber-Tamagotchi</h1><span id="name"></span><span id="lv"></span></header>
+ <canvas id="c" aria-label="Питомец"></canvas>
+ <div id="msg"></div>
+ <section id="bars"></section>
+ <div id="fed"></div>
+ <nav class="acts">
+  <button id="bFeed" style="--k:#ffd400"><b>🔋</b>Кормить</button>
+  <button id="bPlay" style="--k:#ff2fd6"><b>🎮</b>Играть</button>
+  <button id="bSleep"><b>🌙</b><span>Сон</span></button>
+ </nav>
+ <nav class="tools">
+  <button id="bMic">🎤 Голос</button><button id="bSnd">🔊 Звук</button><button id="bReset">⟲ Сброс</button>
+ </nav>
+</main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id),cl=(v,a=0,b=100)=>Math.max(a,Math.min(b,v)),rnd=(a,b)=>a+Math.random()*(b-a);
+const NAMES=['Пиксель','Нео','Вольт','Кибер','Квазар','Омега'],KEY='cybertama.v1',need=l=>40+l*30;
+const night=()=>{const h=new Date().getHours();return h>=22||h<6};
+
+/* ---------- состояние ---------- */
+let S={lvl:1,xp:0,energy:80,mood:70,fed:Date.now(),last:Date.now(),sleep:false};
+try{Object.assign(S,JSON.parse(localStorage.getItem(KEY))||{})}catch(e){}
+const save=()=>{S.last=Date.now();try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+(()=>{const away=Math.min((Date.now()-S.last)/1000,28800);
+ if(S.sleep){S.energy+=away*.05;S.mood+=away*.01}else{S.energy-=away*.004;S.mood-=away*.003}
+ S.energy=cl(S.energy);S.mood=cl(S.mood);
+ if(night()&&!S.sleep){S.sleep=true;setTimeout(()=>say('Уже поздно — питомец уснул 🌙'),400)}})();
+
+/* ---------- звук (Web Audio, синтез) ---------- */
+let AC,muted=false;
+const au=()=>{if(!AC)try{AC=new(window.AudioContext||window.webkitAudioContext)()}catch(e){}if(AC&&AC.state==='suspended')AC.resume();return AC};
+function tone(f,d=.1,type='square',t0=0,f2=0,v=.07){const a=au();if(!a||muted)return;const o=a.createOscillator(),g=a.createGain(),t=a.currentTime+t0;
+ o.type=type;o.frequency.setValueAtTime(f,t);if(f2)o.frequency.exponentialRampToValueAtTime(f2,t+d);
+ g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(g).connect(a.destination);o.start(t);o.stop(t+d+.02)}
+const seq=(n,s=.08,ty)=>n.forEach((f,i)=>tone(f,s*1.3,ty,i*s));
+const SFX={feed:()=>seq([392,523,659,784]),play:()=>seq([523,659,523,784,1046],.07),pet:c=>tone(480+c*45,.09,'triangle',0,900+c*45),
+ sleep:()=>seq([523,392,330,262],.16,'sine'),wake:()=>seq([262,330,392,523],.1,'sine'),lvl:()=>seq([523,659,784,1046,784,1046,1318],.09),
+ err:()=>tone(170,.22,'sawtooth',0,80),shake:()=>{tone(200,.15,'square',0,800);tone(400,.15,'square',.08,1200)},on:()=>seq([660,990],.07)};
+const buzz=n=>navigator.vibrate&&navigator.vibrate(n);
+
+/* ---------- UI ---------- */
+const BARS=[['energy','⚡ Энергия',50],['mood','♥ Настроение',320],['xp','★ Опыт',null]],B={};
+BARS.forEach(([k,t,h])=>{const d=document.createElement('div');d.className='bar';
+ d.innerHTML=`<span>${t}</span><div class="t"><div class="f" style="--b:${h??'var(--h)'}"></div></div><b></b>`;$('bars').append(d);B[k]=[d.querySelector('.f'),d.querySelector('b')]});
+let msgT=0;
+function say(t){$('msg').textContent=t;msgT=3.5}
+function status(){return S.sleep?'Zzz… восстанавливаю ресурсы':S.energy<25?'Я голоден… встряхни меня!':S.mood<30?'Мне грустно. Погладь или поиграй':S.mood>85?'Всё супер, я в потоке ✨':'Системы в норме'}
+function ui(){
+ const p=S.xp/need(S.lvl)*100,v={energy:S.energy,mood:S.mood,xp:p};
+ for(const k in B){B[k][0].style.width=v[k]+'%';B[k][1].textContent=Math.round(v[k])}
+ $('lv').textContent='LVL '+S.lvl;$('name').textContent=NAMES[Math.min(S.lvl-1,NAMES.length-1)];
+ document.documentElement.style.setProperty('--h',hue());
+ const m=Math.floor((Date.now()-S.fed)/60000);$('fed').textContent='Последний корм: '+(m<1?'только что':m<60?m+' мин назад':Math.floor(m/60)+' ч назад');
+ $('bSleep').lastChild.textContent=S.sleep?'Свет':'Сон';$('bSleep').firstChild.textContent=S.sleep?'💡':'🌙';
+ document.body.classList.toggle('night',S.sleep);if(msgT<=0)$('msg').textContent=status()}
+const hue=()=>(175+(S.lvl-1)*47)%360;
+
+/* ---------- действия ---------- */
+function addXp(n){S.xp+=n;while(S.xp>=need(S.lvl)){S.xp-=need(S.lvl);S.lvl++;levelUp()}}
+function levelUp(){SFX.lvl();flash=1;buzz([60,40,120]);fx(26,'✦');initOrbs();say(`Уровень ${S.lvl}! Новая форма: ${NAMES[Math.min(S.lvl-1,5)]} ✨`)}
+function feed(){au();if(S.sleep)return deny('Он спит. Нажми «Свет»');if(S.energy>97)return deny('Я сыт 🙂');
+ S.energy=cl(S.energy+15);S.mood=cl(S.mood+3);S.fed=Date.now();addXp(3);bounce=1.2;happy=1.5;SFX.feed();fx(8,'🔋');say('Ням! Заряд получен')}
+function play(){au();if(S.sleep)return deny('Он спит. Нажми «Свет»');if(S.energy<8)return deny('Слишком устал… покорми меня');
+ S.mood=cl(S.mood+12);S.energy=cl(S.energy-7);addXp(3);bounce=1.6;happy=2.5;SFX.play();fx(10,'♥');say('Ура, играем! 🎮')}
+function toggleSleep(){au();S.sleep=!S.sleep;S.sleep?SFX.sleep():SFX.wake();say(S.sleep?'Ночной режим: сон 🌙':'Доброе утро! ☀️');save();ui()}
+function deny(t){SFX.err();say(t);buzz(40)}
+function shake(){if(S.sleep){say('Zzz… не буди');return}
+ S.energy=cl(S.energy+7);S.mood=cl(S.mood+2);S.fed=Date.now();addXp(1.5);bounce=1.4;happy=2;SFX.shake();buzz(30);fx(6,'⚡');say('Встряска = энергия! ⚡')}
+let combo=0,comboT=0;
+function pet(px,py){au();look.x=cl((px-W/2)/(W/2),-1,1);look.y=cl((py-H/2)/(H/2),-1,1);
+ if(S.sleep){fx(1,'z',px,py);return}
+ combo=comboT>0?Math.min(combo+1,14):1;comboT=.8;S.mood=cl(S.mood+1.2+combo*.1);addXp(.25);bounce=Math.max(bounce,.8);happy=1;SFX.pet(combo);fx(2,'♥',px,py);if(combo%7==0)say('Мурр… 💗 Ещё!')}
+
+/* ---------- датчики ---------- */
+let motionOn=0,lm=9.8,ls=0;
+function onMotion(e){const a=e.accelerationIncludingGravity;if(!a)return;const ax=a.x||0,m=Math.hypot(ax,a.y||0,a.z||0),d=Math.abs(m-lm);lm=m;
+ look.x+=(cl(-ax/6,-1,1)-look.x)*.1;if(d>12&&performance.now()-ls>400){ls=performance.now();shake()}}
+function initMotion(){if(motionOn||!window.DeviceMotionEvent)return;motionOn=1;const go=()=>addEventListener('devicemotion',onMotion);
+ if(typeof DeviceMotionEvent.requestPermission==='function')DeviceMotionEvent.requestPermission().then(r=>r==='granted'?go():(motionOn=0,say('Доступ к датчикам отклонён'))).catch(()=>motionOn=0);else go()}
+document.addEventListener('click',initMotion);
+
+let M={on:0,lv:0};
+async function mic(){au();if(M.on){M.st.getTracks().forEach(t=>t.stop());M={on:0,lv:0};$('bMic').classList.remove('on');say('Микрофон выключен');return}
+ try{const st=await navigator.mediaDevices.getUserMedia({audio:true}),an=AC.createAnalyser();an.fftSize=512;AC.createMediaStreamSource(st).connect(an);
+  M={on:1,st,an,buf:new Uint8Array(512),lv:0};$('bMic').classList.add('on');SFX.on();say('Слушаю… говори или подуй 🌬️')}
+ catch(e){deny('Нет доступа к микрофону. Можно гладить тапами')}}
+
+/* ---------- Canvas ---------- */
+const cv=$('c'),x=cv.getContext('2d');let W=300,H=300,bounce=0,happy=0,flash=0,T=0,blink=3,zT=0,orbs=[];const look={x:0,y:0},parts=[];
+function fit(){const D=devicePixelRatio||1,r=cv.getBoundingClientRect();W=r.width;H=r.height;cv.width=W*D;cv.height=H*D;x.setTransform(D,0,0,D,0,0)}
+addEventListener('resize',fit);
+function initOrbs(){orbs=Array.from({length:3+S.lvl*3},()=>({a:rnd(0,6.28),r:rnd(1.25,1.9),s:rnd(.4,1.1)*(Math.random()<.5?-1:1),z:rnd(1.5,3.5)}))}
+function fx(n,ch,px=W/2,py=H*.5){for(let i=0;i<n;i++)parts.push({x:px+rnd(-30,30),y:py+rnd(-20,20),vx:rnd(-60,60),vy:rnd(-130,-40),l:1,ch})}
+cv.addEventListener('pointerdown',e=>{const r=cv.getBoundingClientRect();pet(e.clientX-r.left,e.clientY-r.top)});
+cv.addEventListener('pointermove',e=>{if(e.buttons){const r=cv.getBoundingClientRect();look.x=cl((e.clientX-r.left-W/2)/(W/2),-1,1);look.y=cl((e.clientY-r.top-H/2)/(H/2),-1,1)}});
+
+function draw(){
+ x.clearRect(0,0,W,H);
+ const L=S.lvl,h=hue(),col=`hsl(${h} 100% 60%)`,sl=S.sleep,R=Math.min(W,H)*.27,cx=W/2,
+  pulse=Math.sin(T*(sl?1.2:3.2))*(sl?.03:.045),cy=H*.52-Math.abs(Math.sin(T*11))*bounce*R*.3+Math.sin(T*1.5)*R*.05;
+ x.globalAlpha=sl?.8:1;
+ for(const o of orbs){const a=o.a+T*o.s,px=cx+Math.cos(a)*o.r*R,py=cy+Math.sin(a)*o.r*R*.55;x.fillStyle=`hsl(${(h+(o.r>1.6?160:0))%360} 100% 70%)`;x.shadowColor=x.fillStyle;x.shadowBlur=12;x.beginPath();x.arc(px,py,o.z*(.6+M.lv*4),0,6.283);x.fill()}
+ x.save();x.translate(cx,cy);x.scale(1+.06*bounce*Math.sin(T*20),1-.06*bounce*Math.sin(T*20));
+ x.shadowColor=col;x.shadowBlur=26;x.strokeStyle=col;x.lineWidth=3;x.lineCap='round';
+ if(L>=2)for(const s of[-1,1]){const ex=s*R*(.62+.04*Math.sin(T*3)),ey=-R*1.28;x.beginPath();x.moveTo(s*R*.38,-R*.85);x.lineTo(ex,ey);x.stroke();x.fillStyle='#ff6ee7';x.shadowColor='#ff2fd6';x.beginPath();x.arc(ex,ey,5+happy,0,6.283);x.fill();x.shadowColor=col}
+ if(L>=5)for(const s of[-1,1]){const w=Math.sin(T*4)*R*.08;x.beginPath();x.moveTo(s*R*.92,-R*.1);x.quadraticCurveTo(s*R*1.75,-R*.75+w,s*R*1.55,R*.3);x.quadraticCurveTo(s*R*1.15,R*.2,s*R*.92,R*.2);x.stroke()}
+ if(L>=4){x.beginPath();x.ellipse(0,-R*1.4,R*.5,R*.13,0,0,6.283);x.stroke()}
+ x.beginPath();for(let i=0;i<=72;i++){const a=i/72*6.2832;let r=R*(1+pulse+.035*Math.sin(a*3+T*2)+.03*Math.cos(a*5-T*1.3));
+  if(L>=3)r+=R*.17*Math.pow(Math.max(0,Math.cos(a*7+T*.4)),8);const px=Math.cos(a)*r,py=Math.sin(a)*r*.92;i?x.lineTo(px,py):x.moveTo(px,py)}x.closePath();
+ const g=x.createRadialGradient(0,-R*.3,R*.1,0,0,R*1.2);g.addColorStop(0,`hsla(${h},100%,70%,.38)`);g.addColorStop(1,`hsla(${(h+40)%360},100%,40%,.1)`);
+ x.fillStyle=g;x.fill();x.stroke();x.shadowBlur=0;x.globalAlpha=.25;x.save();x.scale(.8,.8);x.stroke();x.restore();x.globalAlpha=sl?.8:1;
+ /* глаза */
+ const ex=R*.36,ey=-R*.12,er=R*.2,lx=look.x*er*.4,ly=look.y*er*.3,hp=happy>0||S.mood>88;
+ blink-=.016;const bl=blink<.12?.1:1;if(blink<0)blink=rnd(2,5);
+ x.lineWidth=4;for(const s of[-1,1]){x.beginPath();
+  if(sl){x.arc(s*ex,ey,er*.65,.1*Math.PI,.9*Math.PI);x.stroke()}
+  else if(hp){x.arc(s*ex,ey+er*.4,er*.75,Math.PI*1.1,Math.PI*1.9);x.stroke()}
+  else{const ry=bl*(S.energy<25?.55:1);x.fillStyle='#fff';x.shadowColor='#fff';x.shadowBlur=14;x.ellipse(s*ex,ey,er*.85,er*ry,0,0,6.283);x.fill();x.shadowBlur=0;
+   x.fillStyle='#14002b';x.beginPath();x.ellipse(s*ex+lx,ey+ly,er*.42,er*.42*ry,0,0,6.283);x.fill();x.fillStyle=col;x.beginPath();x.arc(s*ex+lx+er*.15,ey+ly-er*.15,er*.12,0,6.283);x.fill()}}
+ /* рот */
+ const my=R*.32,c=(S.mood-50)/50;x.beginPath();x.strokeStyle='#fff';x.lineWidth=3.5;
+ if(sl||M.lv>.08){x.arc(0,my,R*(sl?.06+.02*Math.sin(T*1.2):.09),0,6.283)}else{x.moveTo(-R*.22,my);x.quadraticCurveTo(0,my+c*R*.4+R*.05,R*.22,my)}x.stroke();
+ x.restore();x.globalAlpha=1;
+ if(flash>0){x.strokeStyle=`hsla(${h},100%,70%,${flash})`;x.lineWidth=6*flash;x.shadowColor=col;x.shadowBlur=30;x.beginPath();x.arc(cx,cy,R*(1+(1-flash)*3.5),0,6.283);x.stroke()}
+ x.shadowBlur=0;x.textAlign='center';
+ for(const p of parts){x.globalAlpha=Math.max(0,p.l);x.font=(p.ch==='z'?26:20)+'px system-ui';x.fillStyle=p.ch==='z'||p.ch==='✦'?col:'#fff';x.fillText(p.ch,p.x,p.y)}x.globalAlpha=1}
+
+/* ---------- главный цикл ---------- */
+let prev=performance.now(),acc=0,sv=0;
+function loop(now){const dt=Math.min((now-prev)/1000,.1);prev=now;T+=dt;
+ bounce=Math.max(0,bounce-dt*1.1);happy=Math.max(0,happy-dt);flash=Math.max(0,flash-dt*1.2);comboT-=dt;msgT-=dt;
+ for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=40*dt;p.l-=dt*.7;if(p.l<=0)parts.splice(i,1)}
+ if(S.sleep){zT-=dt;if(zT<0){zT=1.6;fx(1,'z',W/2+W*.15,H*.4)}}
+ if(M.on){M.an.getByteTimeDomainData(M.buf);let s=0;for(const v of M.buf){const d=(v-128)/128;s+=d*d}M.lv+=(Math.sqrt(s/512)-M.lv)*.3;
+  if(M.lv>.06&&!S.sleep){S.mood=cl(S.mood+M.lv*dt*60);happy=.6;if(Math.random()<dt*3){fx(1,'♥');addXp(.15)}}}
+ acc+=dt;if(acc>.1){const d=acc;acc=0;
+  if(S.sleep){S.energy=cl(S.energy+.5*d);S.mood=cl(S.mood+.04*d)}
+  else{S.energy=cl(S.energy-.03*d);S.mood=cl(S.mood-(S.energy<=0?.06:.025)*d)}
+  ui()}
+ if((sv+=dt)>3){sv=0;save()}
+ draw();requestAnimationFrame(loop)}
+
+/* ---------- старт ---------- */
+$('bFeed').onclick=feed;$('bPlay').onclick=play;$('bSleep').onclick=toggleSleep;$('bMic').onclick=mic;
+$('bSnd').onclick=e=>{muted=!muted;e.currentTarget.textContent=muted?'🔇 Тихо':'🔊 Звук';e.currentTarget.classList.toggle('on',muted);au();if(!muted)SFX.on()};
+$('bReset').onclick=()=>{if(confirm('Начать заново? Прогресс будет удалён.')){try{localStorage.removeItem(KEY)}catch(e){}removeEventListener('pagehide',save);location.reload()}};
+addEventListener('pagehide',save);document.addEventListener('visibilitychange',()=>document.hidden&&save());
+if('serviceWorker'in navigator&&/^https?:$/.test(location.protocol))addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+fit();initOrbs();ui();say('Тапай, тряси телефон, говори — я реагирую');requestAnimationFrame(loop);
+</script>
+</body>
+</html>
